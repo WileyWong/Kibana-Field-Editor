@@ -35,6 +35,18 @@
 
 ---
 
+## 支持的版本
+
+| Kibana 版本 | 编辑器 | 支持？ | 说明 |
+|-------------|--------|:-----:|------|
+| **7.5.x ~ 7.10.x** | Ace Editor | ✅ | 唯一支持的目标版本 |
+| **7.11+** | ~~Ace~~ → **Monaco Editor** | ❌ | Kibana 7.11 起 Dev Tools 换成了 Monaco 编辑器，插件会自动检测到并静默不激活（仅在 F12 Console 输出一行提示） |
+| **8.x** | **Monaco Editor** | ❌ | 最新版同样不支持，架构上预留了 Monaco 适配层，后续版本可能加入 |
+
+> **怎么看自己的 Kibana 用的是什么编辑器？** 打开 Dev Tools 页面，F12 → 在 Elements 面板搜索 `conApp__output`。能找到 → 你是 Ace 版，可以使用。搜到的是 `monaco-editor` → 你是新版本，暂时用不了。
+
+---
+
 ## 长什么样
 
 ```
@@ -112,9 +124,9 @@ kibana-extention/
 ## 调试
 
 - 打开 F12 Console，看到 `[KFE] 已就绪` 说明插件正常激活
+- 在非支持版本上打开，Console 里会看到 `[Kibana Field Editor] 当前环境不受支持…` 的提示
 - 改了代码 → `chrome://extensions/` 点扩展的刷新按钮 → 刷新 Kibana 页面
 - 点击没反应？确认点的是 `_source` 下的字段值，不是 `_id`、`_index` 等元数据
-- 只在 Kibana 7.5.x（Ace Editor）下工作；7.11+ Monaco 版会静默不激活
 
 ---
 
