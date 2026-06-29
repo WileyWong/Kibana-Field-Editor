@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "Kibana Field Editor",
+  "version": "1.0.0",
+  "description": "在 Kibana Dev Tools (Ace) 中快速修改 _search 结果的 _source 字段值并通过 ES _update 持久化",
+  "host_permissions": ["*://*/app/kibana*", "*://*/app/dev_tools*"],
+  "content_scripts": [
+    {
+      "matches": ["*://*/app/kibana*", "*://*/app/dev_tools*"],
+      "js": [
+        "src/locate.js",
+        "src/convert.js",
+        "src/proxy.js",
+        "src/ui/floatButton.js",
+        "src/ui/modal.js",
+        "src/content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["src/injected.js"],
+      "matches": ["*://*/*"]
+    }
+  ]
+}
