@@ -164,13 +164,19 @@
     els.err.textContent = message || '';
   }
 
-  // 展示 ES 返回结果（成功/失败）
-  function showResult(jsonObj, isError) {
+  // 展示 ES 返回结果（成功/失败）；extraNote 可选，显示在状态条下方（如 Monaco 需重新查询提示）
+  function showResult(jsonObj, isError, extraNote) {
     if (!host) return;
     // 顶部状态条：成功绿色 / 失败红色
     els.status.style.display = 'block';
     els.status.className = 'status ' + (isError ? 'bad' : 'ok');
     els.status.textContent = isError ? '修改失败' : '修改成功';
+    if (extraNote) {
+      var note = document.createElement('div');
+      note.style.cssText = 'font-weight:400;font-size:12px;margin-top:4px;opacity:.85;';
+      note.textContent = extraNote;
+      els.status.appendChild(note);
+    }
 
     // ES 原始返回
     els.result.style.display = 'block';

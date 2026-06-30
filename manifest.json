@@ -9,6 +9,7 @@
       "matches": ["*://*/app/kibana*", "*://*/app/dev_tools*"],
       "js": [
         "src/locate.js",
+        "src/locate-dom.js",
         "src/convert.js",
         "src/proxy.js",
         "src/ui/floatButton.js",
@@ -20,7 +21,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["src/injected.js"],
+      "resources": ["src/injected.js", "src/injected-monaco.js"],
       "matches": ["*://*/*"]
     }
   ]

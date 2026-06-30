@@ -14,9 +14,8 @@
   var MSG_FROM_CONTENT = 'KFE_CONTENT';
 
   var initialized = false;     // 防止重复初始化
-  var injectedReady = false;
-  var lastCtx = null;          // 当前命中的字段上下文（用于提交）
   var esVersion = null;
+  var editorType = null;       // 'ace' | 'monaco'
 
   // -------- 工具：发送指令给 injected --------
   function postToInjected(type, payload) {
@@ -50,13 +49,15 @@
       }
 
       function check() {
+        // Ace 版（< 8.16）：.conApp__output
         if (document.querySelector('.conApp__output')) {
           settle({ ok: true, editor: 'ace' });
           return true;
         }
-        if (document.querySelector('.monaco-editor')) {
-          var version = (document.querySelector('meta[name="kbn-version"]') || {}).content || '未知';
-          settle({ ok: false, editor: 'monaco', version: version });
+        // Monaco 版（>= 8.16）：结果区 [data-test-subj="consoleMonacoOutput"]
+        if (document.querySelector('[data-test-subj="consoleMonacoOutput"]') ||
+            document.querySelector('.monaco-editor')) {
+          settle({ ok: true, editor: 'monaco' });
           return true;
         }
         return false;
@@ -71,36 +72,45 @@
         observer.observe(document.documentElement, { childList: true, subtree: true });
       } catch (e) { /* ignore */ }
 
-      // 兜底超时：长时间既无 Ace 也无 Monaco，才判未知不支持（仅一次）
+      // 兜底超时：长时间既无 Ace 也无 Monaco，判未知不支持（仅一次）
       var timer = setTimeout(function () {
         var version = (document.querySelector('meta[name="kbn-version"]') || {}).content || '未知';
-        var editor = document.querySelector('.monaco-editor') ? 'monaco' : 'unknown';
-        settle({ ok: false, editor: editor, version: version });
+        settle({ ok: false, editor: 'unknown', version: version });
       }, maxWaitMs);
     });
   }
 
-  // -------- 注入 MAIN world 脚本 --------
-  function injectMainWorldScript() {
+  // -------- 注入 MAIN world 脚本（按编辑器类型） --------
+  function injectMainWorldScript(type) {
+    var file = type === 'monaco' ? 'src/injected-monaco.js' : 'src/injected.js';
     var s = document.createElement('script');
-    s.src = chrome.runtime.getURL('src/injected.js');
+    s.src = chrome.runtime.getURL(file);
     s.onload = function () { s.remove(); };
     (document.head || document.documentElement).appendChild(s);
   }
 
-  // -------- 处理点击命中 --------
+  // -------- 处理点击命中（Ace：offset 定位） --------
   function handleClick(payload) {
     if (!KFE.locate) return;
-    // 弹窗打开期间忽略结果区点击（模态语义）
     if (KFE.modal && KFE.modal.isOpen && KFE.modal.isOpen()) return;
-
     var ctx = KFE.locate(payload.fullText, payload.offset);
+    showFloatFor(ctx, payload);
+  }
+
+  // -------- 处理点击命中（Monaco：行文本精确匹配 + 缓存 JSON） --------
+  function handleClickMonaco(payload) {
+    if (!KFE.locateByLineCol) return;
+    if (KFE.modal && KFE.modal.isOpen && KFE.modal.isOpen()) return;
+    var ctx = KFE.locateByLineCol(payload.fullText, payload.line, payload.column, payload.lineText);
+    showFloatFor(ctx, payload);
+  }
+
+  // 共用：根据定位结果显示/隐藏浮层
+  function showFloatFor(ctx, payload) {
     if (!ctx) {
       KFE.floatButton && KFE.floatButton.hide();
       return;
     }
-    lastCtx = ctx;
-
     KFE.floatButton.show({
       pageX: payload.screen.pageX,
       pageY: payload.screen.pageY,
@@ -159,17 +169,22 @@
 
     // 3. 处理结果
     if (resp.ok) {
-      KFE.modal.showResult(resp.json, false);
-      // 通知 injected 局部替换 Ace 文本
-      var newText = KFE.serialize(newValue, ctx.valueType);
-      postToInjected('REPLACE', {
-        startOffset: ctx.valueRange.startOffset,
-        endOffset: ctx.valueRange.endOffset,
-        newText: newText
-      });
+      if (editorType === 'monaco') {
+        // Monaco 只读且虚拟渲染，无法可靠回写 → 提示用户重新查询
+        KFE.modal.showResult(resp.json, false, '修改已生效。Monaco 版结果区不会自动刷新，请重新执行该查询以查看最新值。');
+      } else {
+        KFE.modal.showResult(resp.json, false);
+        // Ace：通知 injected 局部替换文本
+        var newText = KFE.serialize(newValue, ctx.valueType);
+        postToInjected('REPLACE', {
+          startOffset: ctx.valueRange.startOffset,
+          endOffset: ctx.valueRange.endOffset,
+          newText: newText
+        });
+      }
     } else {
       KFE.modal.showResult(resp.json, true);
-      // 失败不动 Ace 编辑器
+      // 失败不动编辑器
     }
   }
 
@@ -181,16 +196,22 @@
       var d = ev.data;
       if (!d || d.source !== MSG_FROM_INJECTED) return;
 
-      if (d.type === 'CLICK') {
+      if (d.type === 'CLICK') {              // Ace 点击
         handleClick(d.payload);
+      } else if (d.type === 'CLICK_MONACO') { // Monaco 点击
+        handleClickMonaco(d.payload);
       } else if (d.type === 'SCROLL') {
         // 结果区滚动：隐藏浮层（弹窗打开时不受影响）
         KFE.floatButton && KFE.floatButton.hide();
       } else if (d.type === 'READY') {
-        injectedReady = true;
+        /* injected 就绪 */
+      } else if (d.type === 'SEARCH_CACHED') {
+        console.debug('[KFE] 已缓存 _search 响应，长度=', d.payload && d.payload.length);
+      } else if (d.type === 'NO_CACHE') {
+        console.debug('[KFE] 尚未捕获到 _search 响应，请先执行一次查询');
       } else if (d.type === 'REPLACED') {
         if (!d.payload || !d.payload.ok) {
-          console.warn('[KFE] Ace 文本替换失败：', d.payload && d.payload.message);
+          console.warn('[KFE] 文本替换失败：', d.payload && d.payload.message);
         }
       } else if (d.type === 'ERROR') {
         console.debug('[KFE] injected error:', d.payload);
@@ -199,21 +220,22 @@
   }
 
   // -------- 初始化 --------
-  async function initFeature() {
+  async function initFeature(type) {
     if (initialized) {
       // 已初始化，仅提醒 injected 重新绑定（路由切回时结果区可能重建）
       postToInjected('PING', {});
       return;
     }
     initialized = true;
+    editorType = type;
 
     bindMessages();
-    injectMainWorldScript();
+    injectMainWorldScript(type);
 
     // 异步获取版本（仅用于日志）
     try {
       esVersion = await KFE.getVersion();
-      console.info('[KFE] 已就绪。ES 版本：' + (esVersion || '未知'));
+      console.info('[KFE] 已就绪（' + type + ' 版）。ES 版本：' + (esVersion || '未知'));
     } catch (e) { /* ignore */ }
   }
 
@@ -230,18 +252,12 @@
 
     var compat = await detectCompatibility();
     if (compat.ok) {
-      await initFeature();
+      await initFeature(compat.editor); // 'ace' | 'monaco'
       return;
     }
 
-    // 不支持：仅当“明确检测到 Monaco”时提示用户；unknown（多为加载异常）只用 debug 日志，不打扰
-    if (compat.editor === 'monaco') {
-      console.info(
-        '[Kibana Field Editor] 当前环境不受支持，插件未激活。' +
-        '（检测到 Monaco 编辑器；Kibana 版本: ' + (compat.version || '未知') + '）' +
-        ' 本插件当前仅支持基于 Ace Editor 的 Kibana（约 7.5.x，<7.11）。'
-      );
-    } else {
+    // 不支持：未识别到任何已知编辑器（多为加载异常），仅 debug 日志，不打扰
+    {
       console.debug(
         '[Kibana Field Editor] 等待超时未检测到结果区编辑器，插件未激活。' +
         '若你确在 Dev Tools Console，请刷新页面重试。'

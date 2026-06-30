@@ -37,13 +37,21 @@
 
 ## 支持的版本
 
+Kibana 在 **8.16** 把 Dev Tools Console 的编辑器从 Ace 换成了 Monaco（见 [Elastic 官方博客](https://www.elastic.co/blog/dev-tools-console-kibana)）。
+插件对两种编辑器都做了适配，**全版本可用**，只是 Monaco 版有一点体验差异（见下表）。
+
 | Kibana 版本 | 编辑器 | 支持？ | 说明 |
 |-------------|--------|:-----:|------|
-| **7.5.x ~ 7.10.x** | Ace Editor | ✅ | 唯一支持的目标版本 |
-| **7.11+** | ~~Ace~~ → **Monaco Editor** | ❌ | Kibana 7.11 起 Dev Tools 换成了 Monaco 编辑器，插件会自动检测到并静默不激活（仅在 F12 Console 输出一行提示） |
-| **8.x** | **Monaco Editor** | ❌ | 最新版同样不支持，架构上预留了 Monaco 适配层，后续版本可能加入 |
+| **7.x（含 7.5 ~ 7.17）** | Ace Editor | ✅ | 实测 7.5.1、7.17.x 均可用 |
+| **8.0 ~ 8.15** | Ace Editor | ✅ | 仍是 Ace，完整支持 |
+| **8.16+（含 8.17.x）** | **Monaco Editor** | ✅ | 已适配（实测 8.17.3）。**差异**：修改成功后结果区不会就地刷新，需**重新执行查询**查看最新值（弹窗会提示） |
 
-> **怎么看自己的 Kibana 用的是什么编辑器？** 打开 Dev Tools 页面，F12 → 在 Elements 面板搜索 `conApp__output`。能找到 → 你是 Ace 版，可以使用。搜到的是 `monaco-editor` → 你是新版本，暂时用不了。
+> **两种版本的实现差异**（了解即可，使用无感）：
+> - **Ace 版**：直接复用页面 `window.ace` 实例，能拿全文、能就地回写结果区。
+> - **Monaco 版**：Monaco 实例不可达，改用「拦截 `_search` 网络响应拿完整 JSON + DOM 点击定位」；因 Monaco 结果区只读且虚拟渲染，**更新成功后不就地回写**，需重新查询。
+
+> **怎么看自己的 Kibana 用的是什么编辑器？**（最准，不用记版本号）
+> 打开 Dev Tools 页面，F12 → Elements 面板搜索 `conApp__output`（Ace 版，< 8.16）或 `consoleMonacoOutput`（Monaco 版，8.16+）。两者插件都支持。
 
 ---
 
@@ -136,5 +144,6 @@ kibana-extention/
 |------|------|
 | 改标量字段（string/number/bool/null） | 编辑整个嵌套对象 |
 | 编辑整个数组 | 批量修改多条文档 |
-| 单条点击修改 | 操作日志 / 撤销回滚 |
-| | Kibana 7.11+ Monaco 版适配（预留了接口） |
+| 数组内对象字段（painless 精准更新） | 操作日志 / 撤销回滚 |
+| 单条点击修改 | Monaco 版（8.16+）成功后就地回写结果区（需重新查询） |
+| 全版本支持（Ace 与 Monaco） | |
